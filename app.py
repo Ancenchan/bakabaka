@@ -35,18 +35,37 @@ def smart_remove_background(cv_img, tol):
     flood_fill = cv_img.copy()
     mask = np.zeros((h + 2, w + 2), np.uint8)
     
-    # 从四个角尝试填充
-    seeds = [(0, 0), (0, h-1), (w-1, 0), (w-1, h-1)]
-    for x, y in seeds:
-        cv2.floodFill(flood_fill, mask, (x, y), (255, 255, 255), 
-                      (tol, tol, tol), (tol, tol, tol), 
-                      cv2.FLOODFILL_FIXED_RANGE)
+    # 采样点：除了四角，增加边缘中点扫描
+    seeds = [(0, 0), (w-1, 0), (0, h-1), (w-1, h-1), (w//2, 0), (w//2, h-1), (0, h//2), (w-1, h//2)]
+    
+    # 核心逻辑：
+    # 我们把背景识别容差 (tol) 调得稍微高一点（比如 30-50）
+    # 这样算法会认为：背景(米白) -> 描边(纯白) 之间的变化是很小的，属于同一种“水”
+    # 但 纯白(255) -> 黑线(0) 的差距是 255，远超 tol，水会被黑线挡住
+    
+    for sx, sy in seeds:
+        if mask[sy+1, sx+1] == 0:
+            cv2.floodFill(
+                flood_fill, 
+                mask, 
+                (sx, sy), 
+                (255, 255, 255), 
+                (tol, tol, tol), # 低容差方向（防止往深色渗入）
+                (tol, tol, tol), # 高容差方向（允许往更亮的白色渗入）
+                cv2.FLOODFILL_FIXED_RANGE
+            )
 
+    # 得到背景掩码
     final_mask = mask[1:-1, 1:-1] * 255 
+    
+    # 转换为 RGBA
     img_rgb = cv2.cvtColor(cv_img, cv2.COLOR_BGR2RGB)
     pil_img = Image.fromarray(img_rgb).convert("RGBA")
+    
+    # 透明度处理：被油漆桶刷到的地方（背景+白色描边）全部变透明
     alpha = Image.fromarray(255 - final_mask).convert("L")
     pil_img.putalpha(alpha)
+    
     return pil_img
 
 # --- 主逻辑 ---
